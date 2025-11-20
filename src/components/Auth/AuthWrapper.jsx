@@ -30,10 +30,39 @@ function AuthWrapper({ children }) {
 
   return (
     <>
-      <div className="flex justify-end p-2">
-        <span className="mr-3">Signed in as: {user.email}</span>
+      <div
+        style={{
+          width: "100%",
+          backgroundColor: "#F20530",
+          color: "#F2E5D5",
+          display: "flex",
+          justifyContent: "flex-end",
+          alignItems: "center",
+          padding: "8px 24px",
+          fontFamily:
+            '"Futura", "Futura PT", "Century Gothic", "Avenir Next", sans-serif',
+          fontWeight: 700,
+          fontSize: "1.13rem",
+          letterSpacing: "0.02em",
+        }}
+      >
+        <span style={{ marginRight: "16px" }}>
+          Signed in as: {user.email}
+        </span>
         <button
-          className="bg-gray-300 hover:bg-gray-400 px-3 py-1 rounded"
+          style={{
+            background: "#F2E5D5",
+            color: "#F20530",
+            fontWeight: 700,
+            border: "none",
+            borderRadius: "6px",
+            padding: "7px 18px",
+            cursor: "pointer",
+            fontFamily:
+              '"Futura", "Futura PT", "Century Gothic", "Avenir Next", sans-serif',
+            fontSize: "1.08rem",
+            transition: "background 0.2s, color 0.2s",
+          }}
           onClick={() => signOut(auth)}
         >
           Sign Out

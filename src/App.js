@@ -6,6 +6,7 @@ import { createHabitState } from './utils/localStorage';
 import AuthWrapper from './components/Auth/AuthWrapper';
 import { getHabits, createHabit } from './services/habitService';
 
+
 const castleGrid = [
   [false, false, false, true, true, false, false, false],
   [false, false, false, true, true, false, false, false],
@@ -17,6 +18,7 @@ const castleGrid = [
   [false, false, false, false, false, false, false, false]
 ];
 
+
 const fillablePositions = [];
 for (let row = castleGrid.length - 1; row >= 0; row--) {
   for (let col = 0; col < castleGrid[row].length; col++) {
@@ -24,6 +26,7 @@ for (let row = castleGrid.length - 1; row >= 0; row--) {
   }
 }
 const fillableBlocks = fillablePositions.length;
+
 
 // Helper to find the last filled/animated block index
 function getLastFilledIndex(days, prevDays) {
@@ -39,6 +42,7 @@ function getLastFilledIndex(days, prevDays) {
   return -1;
 }
 
+
 function App() {
   const [habitStates, setHabitStates] = useState(null);
   const [habitInputs, setHabitInputs] = useState([null, null]);
@@ -47,6 +51,7 @@ function App() {
   const [errorMessage, setErrorMessage] = useState("");
   // New: track the previous state for animation
   const [prevHabitStates, setPrevHabitStates] = useState([null, null]);
+
 
   // Load habits from Firestore on mount
   useEffect(() => {
@@ -80,6 +85,7 @@ function App() {
     fetchHabits();
   }, []);
 
+
   async function handleNameSubmit(idx) {
     if (habitInputs[idx]?.trim()) {
       try {
@@ -107,6 +113,7 @@ function App() {
     }
   }
 
+
   async function handleLog(idx) {
     setPrevHabitStates(habitStates); // Track previous for animation
     const updatedHabits = habitStates.map((h, i) => {
@@ -124,12 +131,14 @@ function App() {
     });
     setHabitStates(updatedHabits);
 
+
     try {
       await createHabit(`habit${idx + 1}`, updatedHabits[idx]);
     } catch (e) {
       setErrorMessage("Could not sync log to cloud. Your castle still updated locally.");
     }
   }
+
 
   if (
     loading ||
@@ -141,25 +150,38 @@ function App() {
   ) {
     return (
       <AuthWrapper>
-        <div className="min-h-screen flex flex-col items-center justify-center bg-black text-white">
-          <div className="text-xl mb-2">Loading your habits...</div>
-          <div className="text-sm text-gray-400">This usually takes just a moment.</div>
+        <div className="min-h-screen flex flex-col items-center justify-center" style={{ backgroundColor: '#F20530' }}>
+          <div className="text-xl mb-2" style={{ color: '#F2E5D5' }}>Loading your habits...</div>
+          <div className="text-sm" style={{ color: '#F2E5D5', opacity: 0.8 }}>This usually takes just a moment.</div>
         </div>
       </AuthWrapper>
     );
   }
 
+
   // Main dashboard UI
   return (
     <AuthWrapper>
-      <div className="min-h-screen bg-black flex flex-col items-center">
-        <div className="bg-blue-500 text-white p-8 w-full">
-          <h1>Habit Tracker MVP</h1>
-          <p>Track up to <b>2 habits</b>. State always persists and is editable.</p>
+      <div className="min-h-screen flex flex-col items-center" style={{ backgroundColor: '#F20530' }}>
+        <div className="w-full p-8" style={{ backgroundColor: '#F20530' }}>
+          <h1 
+            style={{
+              fontFamily: '"Futura", "Futura PT", "Century Gothic", "Avenir Next", sans-serif',
+              fontWeight: 800,
+              fontSize: '3rem',
+              color: '#F2E5D5',
+              textAlign: 'center',
+              letterSpacing: '0.05em',
+              margin: 0
+            }}
+          >
+            HABIT TRACKER
+          </h1>
           {errorMessage && (
-            <p className="mt-2 text-sm text-yellow-200">{errorMessage}</p>
+            <p className="mt-2 text-sm text-center" style={{ color: '#F2E5D5', opacity: 0.9 }}>{errorMessage}</p>
           )}
         </div>
+
 
         <div className="flex gap-8 mb-6">
           {habitStates.map((_, idx) => (
@@ -186,16 +208,18 @@ function App() {
           ))}
         </div>
 
+
         <div className="flex gap-8 mt-2 flex-wrap justify-center">
           {habitStates.map((h, idx) => {
             // For each habit, get which block should animate
             const lastFilled = getLastFilledIndex(h.days, prevHabitStates?.[idx]?.days ?? null);
 
+
             return (
               <div key={idx} className="flex flex-col items-center">
                 {!inputVisible[idx] && (
                   <>
-                    <h2 className="text-lg text-white mb-2">{h.name}</h2>
+                    <h2 className="text-lg mb-2" style={{ color: '#F2E5D5' }}>{h.name}</h2>
                     <div
                       className="relative flex justify-center items-center"
                       style={{ width: '384px', height: '384px' }}
@@ -259,5 +283,6 @@ function App() {
     </AuthWrapper>
   );
 }
+
 
 export default App;
