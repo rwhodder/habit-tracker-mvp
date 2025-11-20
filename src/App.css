@@ -36,3 +36,15 @@
     transform: rotate(360deg);
   }
 }
+
+
+/* Simple pop animation for castle blocks */
+@keyframes pop {
+  0% { transform: scale(1); }
+  70% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+.block-pop {
+  animation: pop 0.35s cubic-bezier(0.45, 2, 0.35, 1.3);
+}
