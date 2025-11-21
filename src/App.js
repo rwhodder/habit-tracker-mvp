@@ -175,7 +175,7 @@ function App() {
               margin: 0
             }}
           >
-            HABIT TRACKER
+            TABIT HACKER
           </h1>
           {errorMessage && (
             <p className="mt-2 text-sm text-center" style={{ color: '#F2E5D5', opacity: 0.9 }}>{errorMessage}</p>
