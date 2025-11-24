@@ -1,30 +1,33 @@
-import { db, auth } from './firebase';
-import { setDoc, getDoc, doc } from 'firebase/firestore';
+import { v4 as uuidv4 } from 'uuid';
 
-export async function createHabit(habitId, habitData) {
-  const user = auth.currentUser;
-  if (!user) throw new Error("Not authenticated.");
-  await setDoc(doc(db, "users", user.uid, "habits", habitId), habitData, { merge: true });
+export function createHabit(name) {
+  return {
+    id: uuidv4(),
+    name,
+    days: [],
+    contextCues: [],
+    blockStates: [],
+    streak: 0,
+    repairs: 0,
+    skin: "",
+    milestones: [],
+  };
 }
 
-// Always return both habit slots
-export async function getHabits() {
-  const user = auth.currentUser;
-  if (!user) throw new Error("Not authenticated.");
-  const habitIds = ["habit1", "habit2"];
-  const habits = await Promise.all(
-    habitIds.map(async (id) => {
-      const docRef = doc(db, "users", user.uid, "habits", id);
-      const docSnap = await getDoc(docRef);
-      return docSnap.exists() ? { id, ...docSnap.data() } : null;
-    })
+export function addHabit(habits, habitName, contextCues = []) {
+  const newHabit = createHabit(habitName);
+  newHabit.contextCues = contextCues;
+  return [...habits, newHabit];
+}
+
+
+
+export function updateHabit(habits, habitId, updatedFields) {
+  return habits.map(habit =>
+    habit.id === habitId ? { ...habit, ...updatedFields } : habit
   );
-  return habits.map((h, i) =>
-    h ||
-    {
-      id: habitIds[i],
-      name: "",
-      days: Array(32).fill("missed"),
-    }
-  );
+}
+
+export function deleteHabit(habits, habitId) {
+  return habits.filter(habit => habit.id !== habitId);
 }

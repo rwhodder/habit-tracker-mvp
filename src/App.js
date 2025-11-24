@@ -1,288 +1,237 @@
-// src/App.js
-import React, { useState, useEffect } from 'react';
-import LogButton from './components/LogButton';
-import SubmitButton from './components/SubmitButton';
-import { createHabitState } from './utils/localStorage';
-import AuthWrapper from './components/Auth/AuthWrapper';
-import { getHabits, createHabit } from './services/habitService';
-
-
-const castleGrid = [
-  [false, false, false, true, true, false, false, false],
-  [false, false, false, true, true, false, false, false],
-  [false, false, true, true, true, true, false, false],
-  [false, false, true, true, true, true, false, false],
-  [false, true, true, true, true, true, true, false],
-  [false, true, true, true, true, true, true, false],
-  [false, true, true, true, true, true, true, false],
-  [false, false, false, false, false, false, false, false]
-];
-
-
-const fillablePositions = [];
-for (let row = castleGrid.length - 1; row >= 0; row--) {
-  for (let col = 0; col < castleGrid[row].length; col++) {
-    if (castleGrid[row][col]) fillablePositions.push({ row, col });
-  }
-}
-const fillableBlocks = fillablePositions.length;
-
-
-// Helper to find the last filled/animated block index
-function getLastFilledIndex(days, prevDays) {
-  if (!prevDays) return -1;
-  for (let i = 0; i < days.length; i++) {
-    if (
-      (days[i] === 'completed' || days[i] === 'grace') &&
-      prevDays[i] === 'missed'
-    ) {
-      return i;
-    }
-  }
-  return -1;
-}
-
+import React, { useState } from 'react';
+import { addHabit } from './services/habitService';
 
 function App() {
-  const [habitStates, setHabitStates] = useState(null);
-  const [habitInputs, setHabitInputs] = useState([null, null]);
-  const [inputVisible, setInputVisible] = useState([null, null]);
-  const [loading, setLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
-  // New: track the previous state for animation
-  const [prevHabitStates, setPrevHabitStates] = useState([null, null]);
+  const [habits, setHabits] = useState([]);
+  const [newHabitName, setNewHabitName] = useState("");
+  const [showContextClues, setShowContextClues] = useState(false);
+  const [contextClueInputs, setContextClueInputs] = useState(["", "", ""]);
+  // Local success pop state per habit
+  const [successPops, setSuccessPops] = useState({}); // {habitId: true|false}
+  const [showCelebration, setShowCelebration] = useState(""); // empty or habit name
 
+  // Step 1: Handle input for habit name and transition to context clue inputs
+  const handleAddHabit = (e) => {
+    e.preventDefault();
+    if (newHabitName.trim() === "") return;
+    setShowContextClues(true);
+  };
 
-  // Load habits from Firestore on mount
-  useEffect(() => {
-    async function fetchHabits() {
-      try {
-        setErrorMessage("");
-        const habits = await getHabits();
-        setHabitStates(habits);
-        setInputVisible([
-          !habits[0]?.name,
-          !habits[1]?.name,
-        ]);
-        setHabitInputs([
-          habits[0]?.name || "",
-          habits[1]?.name || "",
-        ]);
-        setPrevHabitStates([null, null]); // Clear previous on fresh load
-      } catch (e) {
-        setErrorMessage("Could not load from cloud, using local defaults instead.");
-        setHabitStates([
-          createHabitState("", fillableBlocks),
-          createHabitState("", fillableBlocks)
-        ]);
-        setInputVisible([true, true]);
-        setHabitInputs(["", ""]);
-        setPrevHabitStates([null, null]);
-      } finally {
-        setLoading(false);
-      }
-    }
-    fetchHabits();
-  }, []);
+  // Step 2: Add context clues and finalize habit in the list
+  const handleAddContextClues = (e) => {
+    e.preventDefault();
+    const cues = contextClueInputs
+      .map(str => str.trim())
+      .filter(str => str.length > 0)
+      .map(cue => ({ cue, done: false }));
+    setHabits(prev => addHabit(prev, newHabitName.trim(), cues));
+    setNewHabitName("");
+    setShowContextClues(false);
+    setContextClueInputs(["", "", ""]);
+  };
 
-
-  async function handleNameSubmit(idx) {
-    if (habitInputs[idx]?.trim()) {
-      try {
-        setErrorMessage("");
-        const updatedHabits = [...habitStates];
-        updatedHabits[idx] = {
-          ...updatedHabits[idx],
-          name: habitInputs[idx].trim()
-        };
-        await createHabit(`habit${idx + 1}`, updatedHabits[idx]);
-        const habits = await getHabits();
-        setHabitStates(habits);
-        setInputVisible([
-          !habits[0]?.name,
-          !habits[1]?.name,
-        ]);
-        setHabitInputs([
-          habits[0]?.name || "",
-          habits[1]?.name || "",
-        ]);
-        setPrevHabitStates([null, null]);
-      } catch (e) {
-        setErrorMessage("Saving habit name failed. Please try again.");
-      }
-    }
-  }
-
-
-  async function handleLog(idx) {
-    setPrevHabitStates(habitStates); // Track previous for animation
-    const updatedHabits = habitStates.map((h, i) => {
-      if (i !== idx) return h;
-      const nextDays = [...h.days];
-      const firstMissed = nextDays.findIndex(d => d === 'missed');
-      if (firstMissed === -1) return h;
-      const hasGrace = nextDays.includes('grace');
-      if (!hasGrace) {
-        nextDays[firstMissed] = 'grace';
-      } else {
-        nextDays[firstMissed] = 'completed';
-      }
-      return { ...h, days: nextDays };
-    });
-    setHabitStates(updatedHabits);
-
-
-    try {
-      await createHabit(`habit${idx + 1}`, updatedHabits[idx]);
-    } catch (e) {
-      setErrorMessage("Could not sync log to cloud. Your castle still updated locally.");
-    }
-  }
-
-
-  if (
-    loading ||
-    habitStates === null ||
-    inputVisible[0] === null ||
-    inputVisible[1] === null ||
-    habitInputs[0] === null ||
-    habitInputs[1] === null
-  ) {
-    return (
-      <AuthWrapper>
-        <div className="min-h-screen flex flex-col items-center justify-center" style={{ backgroundColor: '#F20530' }}>
-          <div className="text-xl mb-2" style={{ color: '#F2E5D5' }}>Loading your habits...</div>
-          <div className="text-sm" style={{ color: '#F2E5D5', opacity: 0.8 }}>This usually takes just a moment.</div>
-        </div>
-      </AuthWrapper>
+  // Handler for toggling context clue completion
+  const handleToggleClue = (habitId, clueIndex) => {
+    setHabits(prev =>
+      prev.map(habit =>
+        habit.id !== habitId
+          ? habit
+          : {
+              ...habit,
+              contextCues: habit.contextCues.map((clue, idx) =>
+                idx !== clueIndex
+                  ? clue
+                  : { ...clue, done: !clue.done }
+              ),
+            }
+      )
     );
-  }
+  };
 
+  // Handler for clicking the big "Success" block
+  const handleSuccessClick = (habit) => {
+    setSuccessPops(prev => ({ ...prev, [habit.id]: true }));
+    // If all context clues are done, show extra celebration
+    const allDone = habit.contextCues.every(cue => cue.done);
+    if (allDone) {
+      setShowCelebration(habit.name);
+      setTimeout(() => setShowCelebration(""), 1800);
+    }
+    // Animate block pop back down
+    setTimeout(() => setSuccessPops(prev => ({ ...prev, [habit.id]: false })), 800);
+  };
 
-  // Main dashboard UI
-  return (
-    <AuthWrapper>
-      <div className="min-h-screen flex flex-col items-center" style={{ backgroundColor: '#F20530' }}>
-        <div className="w-full p-8" style={{ backgroundColor: '#F20530' }}>
-          <h1 
+  // Vertical habit display with chained clues and toggling
+  const HabitVertical = ({ habit }) => (
+    <div style={{ marginBottom: 60, textAlign: 'center', position: 'relative' }}>
+      <div style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>{habit.name}</div>
+      {habit.contextCues.map((context, i) => (
+        <div key={i} style={{ position: 'relative', marginBottom: 40 }}>
+          <div
             style={{
-              fontFamily: '"Futura", "Futura PT", "Century Gothic", "Avenir Next", sans-serif',
-              fontWeight: 800,
-              fontSize: '3rem',
-              color: '#F2E5D5',
-              textAlign: 'center',
-              letterSpacing: '0.05em',
-              margin: 0
+              padding: '14px 0',
+              background: '#fff',
+              borderRadius: 8,
+              boxShadow: '0 1px 4px rgba(0,0,0,0.07)',
+              width: 160,
+              margin: '0 auto',
+              cursor: 'pointer',
+              border: context.done ? '2px solid #27ae60' : '2px solid #bbb',
+              transition: 'border 0.2s',
             }}
+            onClick={() => handleToggleClue(habit.id, i)}
+            title="Click to mark complete/incomplete"
           >
-            TABIT HACKER
-          </h1>
-          {errorMessage && (
-            <p className="mt-2 text-sm text-center" style={{ color: '#F2E5D5', opacity: 0.9 }}>{errorMessage}</p>
+            <span style={{
+              fontWeight: 600,
+              opacity: context.done ? 0.6 : 1,
+              textDecoration: context.done ? 'line-through' : 'none',
+              color: context.done ? '#27ae60' : '#111'
+            }}>
+              Context Clue {i + 1}:
+            </span> {context.cue}
+          </div>
+          {/* Render connector unless it's the last context clue */}
+          {i < habit.contextCues.length && (
+            <div style={{
+              width: 4,
+              height: 40,
+              background: '#666',
+              borderRadius: 2,
+              position: 'absolute',
+              left: '50%',
+              top: '100%',
+              transform: 'translateX(-50%)',
+            }}></div>
           )}
         </div>
-
-
-        <div className="flex gap-8 mb-6">
-          {habitStates.map((_, idx) => (
-            <div key={idx} className="flex flex-col items-center">
-              {inputVisible[idx] && (
-                <div className="flex items-center">
-                  <input
-                    type="text"
-                    className="bg-gray-200 rounded p-2 mx-2 mb-2 text-center"
-                    placeholder={`Enter habit ${idx + 1}`}
-                    value={habitInputs[idx]}
-                    onChange={e => setHabitInputs(inputs =>
-                      inputs.map((iv, i) => (i === idx ? e.target.value : iv))
-                    )}
-                    style={{ minWidth: "140px", fontSize: "1.1rem" }}
-                  />
-                  <SubmitButton
-                    disabled={!habitInputs[idx]?.trim()}
-                    onClick={() => handleNameSubmit(idx)}
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+      ))}
+      {/* Big Success Box */}
+      <div style={{ position: 'relative', marginBottom: 50 }}>
+        <div
+          onClick={() => handleSuccessClick(habit)}
+          style={{
+            background: successPops[habit.id] ? '#27ae60' : '#fff',
+            color: successPops[habit.id] ? '#fff' : '#222',
+            border: '2px solid #27ae60',
+            borderRadius: 16,
+            fontWeight: 'bold',
+            fontSize: 16,
+            width: 210,
+            margin: '0 auto',
+            marginTop: -20,
+            padding: '22px 0',
+            boxShadow: successPops[habit.id]
+              ? '0 0 16px 6px #baffc9'
+              : '0 1px 6px rgba(0,0,0,0.07)',
+            cursor: 'pointer',
+            transition: 'all 0.2s',
+            transform: successPops[habit.id] ? 'scale(1.06)' : 'scale(1.0)',
+          }}
+          title="Click to mark daily habit completed"
+        >
+          Success! Daily Habit Completed
+          {successPops[habit.id] && (
+            <span style={{ fontWeight: 400, display: 'block', fontSize: 13, marginTop: 7 }}>
+              Clicked!
+            </span>
+          )}
         </div>
-
-
-        <div className="flex gap-8 mt-2 flex-wrap justify-center">
-          {habitStates.map((h, idx) => {
-            // For each habit, get which block should animate
-            const lastFilled = getLastFilledIndex(h.days, prevHabitStates?.[idx]?.days ?? null);
-
-
-            return (
-              <div key={idx} className="flex flex-col items-center">
-                {!inputVisible[idx] && (
-                  <>
-                    <h2 className="text-lg mb-2" style={{ color: '#F2E5D5' }}>{h.name}</h2>
-                    <div
-                      className="relative flex justify-center items-center"
-                      style={{ width: '384px', height: '384px' }}
-                    >
-                      <img
-                        src="/Castle-Basic.jpg"
-                        alt="Castle"
-                        className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
-                        style={{ zIndex: 0 }}
-                      />
-                      <div
-                        className="grid grid-cols-8 gap-2"
-                        style={{
-                          position: "relative",
-                          zIndex: 1,
-                          width: '100%',
-                          height: '100%',
-                        }}
-                      >
-                        {castleGrid.map((rowArr, rowIdx) =>
-                          rowArr.map((canFill, colIdx) => {
-                            const fillIndex = fillablePositions.findIndex(
-                              pos => pos.row === rowIdx && pos.col === colIdx
-                            );
-                            let fillState = canFill && fillIndex > -1 ? h.days[fillIndex] : null;
-                            const popClass = fillIndex === lastFilled ? "block-pop" : "";
-                            return (
-                              <div
-                                key={`${rowIdx}-${colIdx}`}
-                                style={{ width: '40px', height: '40px' }}
-                                className={
-                                  !canFill
-                                    ? "bg-transparent border-none"
-                                    : `border border-gray-400 rounded ${
-                                        fillState === 'completed'
-                                          ? `bg-gray-400 bg-opacity-100 ${popClass}`
-                                          : fillState === 'grace'
-                                            ? `bg-yellow-400 bg-opacity-100 ${popClass}`
-                                            : "bg-gray-400 bg-opacity-20"
-                                      }`
-                                }
-                                title={fillState}
-                              >
-                              </div>
-                            );
-                          })
-                        )}
-                      </div>
-                    </div>
-                    <LogButton
-                      onClick={() => handleLog(idx)}
-                      disabled={!h.days.includes('missed')}
-                    />
-                  </>
-                )}
-              </div>
-            );
-          })}
-        </div>
+        {/* Chain connector below last clue */}
+        <div style={{
+          width: 4,
+          height: 40,
+          background: '#666',
+          borderRadius: 2,
+          position: 'absolute',
+          left: '50%',
+          top: '-40px',
+          transform: 'translateX(-50%)',
+        }}></div>
       </div>
-    </AuthWrapper>
+      {/* Celebration Popup */}
+      {showCelebration === habit.name && (
+        <div style={{
+          position: 'absolute',
+          left: '50%',
+          top: '90%',
+          transform: 'translateX(-50%)',
+          background: '#FFD700',
+          color: '#222',
+          padding: '18px 26px',
+          borderRadius: '12px',
+          fontWeight: 700,
+          fontSize: 16,
+          boxShadow: '0 8px 24px rgba(0,0,0,0.19)',
+          animation: 'popCelebration 0.7s',
+          zIndex: 10,
+        }}>
+          🎉 All context clues completed first!  
+        </div>
+      )}
+    </div>
+  );
+
+  return (
+    <div style={{ maxWidth: 320, margin: '0 auto', padding: 20 }}>
+      <h1>Habit Tracker MVP</h1>
+      {/* Input for new habit */}
+      {!showContextClues ? (
+        <form onSubmit={handleAddHabit}>
+          <input
+            type="text"
+            value={newHabitName}
+            onChange={e => setNewHabitName(e.target.value)}
+            placeholder="Enter Habit Name"
+            required
+            style={{ width: '100%', marginBottom: 8 }}
+          />
+          <button type="submit" style={{ width: '100%' }}>
+            Add Habit
+          </button>
+        </form>
+      ) : (
+        // Step for context clues
+        <form onSubmit={handleAddContextClues} style={{ marginTop: 24 }}>
+          {[0, 1, 2].map(idx => (
+            <input
+              key={idx}
+              type="text"
+              value={contextClueInputs[idx]}
+              onChange={e => {
+                const updated = [...contextClueInputs];
+                updated[idx] = e.target.value;
+                setContextClueInputs(updated);
+              }}
+              placeholder={`Context Clue ${idx + 1}`}
+              style={{ width: '100%', marginBottom: 8 }}
+              required
+            />
+          ))}
+          <button type="submit" style={{ width: '100%' }}>
+            Add Context Clues
+          </button>
+        </form>
+      )}
+
+      <div style={{ marginTop: 32 }}>
+        {habits.map((habit, i) => (
+          <HabitVertical
+            key={habit.id}
+            habit={habit}
+          />
+        ))}
+      </div>
+      {/* Celebration keyframes */}
+      <style>{`
+        @keyframes popCelebration {
+          0% { transform: translateX(-50%) scale(0.85); opacity: 0; }
+          70% { transform: translateX(-50%) scale(1.15); opacity: 1; }
+          100% { transform: translateX(-50%) scale(1); opacity: 1; }
+        }
+      `}</style>
+    </div>
   );
 }
-
 
 export default App;
