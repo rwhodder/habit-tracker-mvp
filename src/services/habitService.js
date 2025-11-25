@@ -14,9 +14,10 @@ export function createHabit(name) {
   };
 }
 
-export function addHabit(habits, habitName, contextCues = []) {
+export function addHabit(habits, habitName, contextCues = [], blockStates = []) {
   const newHabit = createHabit(habitName);
   newHabit.contextCues = contextCues;
+  newHabit.blockStates = blockStates;
   return [...habits, newHabit];
 }
 
