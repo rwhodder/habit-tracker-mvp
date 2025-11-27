@@ -1,19 +1,36 @@
-// src/components/HabitList.js
 import React from 'react';
-import HabitItem from './HabitItem';
+import HabitCard from './HabitCard';
 
-function HabitList({ habits, onEdit, onDelete }) {
+function HabitList({
+  habits,
+  onToggleClue,
+  onSuccess,
+  onMissed,
+  onSimulate,
+  onRepair,
+  successPops,
+  blockShake,
+  towerShake,
+  showCelebration,
+}) {
   return (
-    <ul style={{ listStyle: 'none', padding: 0 }}>
+    <div style={{ marginTop: 32 }}>
       {habits.map(habit => (
-        <HabitItem
+        <HabitCard
           key={habit.id}
           habit={habit}
-          onEdit={onEdit}
-          onDelete={onDelete}
+          onToggleClue={onToggleClue}
+          onSuccess={onSuccess}
+          onMissed={onMissed}
+          onSimulate={onSimulate}
+          onRepair={onRepair}
+          successPops={successPops}
+          blockShake={blockShake}
+          towerShake={towerShake}
+          showCelebration={showCelebration}
         />
       ))}
-    </ul>
+    </div>
   );
 }
 

@@ -1,34 +1,44 @@
-import { v4 as uuidv4 } from 'uuid';
+// src/services/habitService.js
+import { v4 as uuidv4 } from "uuid";
 
-export function createHabit(name) {
-  return {
+// How many total blocks can a habit earn in its tower.
+const MAX_BLOCKS = 12;
+
+export function addHabit(existingHabits, name, contextCues = []) {
+  const newHabit = {
     id: uuidv4(),
     name,
-    days: [],
-    contextCues: [],
-    blockStates: [],
-    streak: 0,
-    repairs: 0,
-    skin: "",
-    milestones: [],
+    contextCues,        // [{ cue, done }]
+    blocksEarned: 0,    // how many blocks are currently unlocked
+    maxBlocks: MAX_BLOCKS
   };
+
+  return [...existingHabits, newHabit];
 }
 
-export function addHabit(habits, habitName, contextCues = [], blockStates = []) {
-  const newHabit = createHabit(habitName);
-  newHabit.contextCues = contextCues;
-  newHabit.blockStates = blockStates;
-  return [...habits, newHabit];
+export function serializeHabits(habits) {
+  return habits.map((h) => ({
+    id: h.id,
+    name: h.name,
+    contextCues: h.contextCues || [],
+    blocksEarned: typeof h.blocksEarned === "number" ? h.blocksEarned : 0,
+    maxBlocks: typeof h.maxBlocks === "number" ? h.maxBlocks : MAX_BLOCKS
+  }));
 }
 
+export function hydrateHabits(raw) {
+  if (!Array.isArray(raw)) return [];
 
-
-export function updateHabit(habits, habitId, updatedFields) {
-  return habits.map(habit =>
-    habit.id === habitId ? { ...habit, ...updatedFields } : habit
-  );
-}
-
-export function deleteHabit(habits, habitId) {
-  return habits.filter(habit => habit.id !== habitId);
+  return raw.map((h) => ({
+    id: h.id,
+    name: h.name,
+    contextCues: (h.contextCues || []).map((c) => ({
+      cue: c.cue || "",
+      done: !!c.done
+    })),
+    blocksEarned:
+      typeof h.blocksEarned === "number" ? h.blocksEarned : 0,
+    maxBlocks:
+      typeof h.maxBlocks === "number" ? h.maxBlocks : MAX_BLOCKS
+  }));
 }

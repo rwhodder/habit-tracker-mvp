@@ -1,453 +1,259 @@
-import React, { useState } from 'react';
-import { addHabit } from './services/habitService';
-
-function getToday() {
-  const d = new Date();
-  return d.toISOString().split("T")[0];
-}
-
-function getDaysBack(n) {
-  const arr = [];
-  for (let i = n - 1; i >= 0; i--) {
-    const dt = new Date();
-    dt.setDate(dt.getDate() - i);
-    arr.push(dt.toISOString().split("T")[0]);
-  }
-  return arr;
-}
-
-// Helper for milestone: returns new blocks array, marking every 5th streak as 'milestone'
-function addMilestones(blockStates) {
-  const sorted = [...blockStates].sort((a, b) => a.date.localeCompare(b.date));
-  let streak = 0;
-  let blocks = [];
-  for (let i = 0; i < sorted.length; i++) {
-    const block = sorted[i];
-    let status = block.status;
-    if (status === "complete") {
-      streak++;
-      if (streak % 5 === 0) {
-        status = "milestone";
-      }
-    } else {
-      streak = 0;
-    }
-    blocks.push({ ...block, status });
-  }
-  return blocks;
-}
-
-// Add damage/crumble status based on missed days
-function getBlockStatesWithMissedLogic(blockStates) {
-  if (!blockStates || blockStates.length === 0) return [];
-  let streakBroken = 0;
-  let updated = [];
-  let baseBlocks = addMilestones(blockStates);
-  for (let i = 0; i < baseBlocks.length; i++) {
-    const curr = baseBlocks[i];
-    if (curr.status === "missed") streakBroken++;
-    else streakBroken = 0;
-    let status = curr.status;
-    if (status === "missed") status = streakBroken === 1 ? "cracked"
-                              : streakBroken === 2 ? "destroyed"
-                              : streakBroken >= 3 ? "collapse" : "missed";
-    updated.push({ ...curr, status });
-  }
-  return updated;
-}
+// src/App.js
+import React, { useEffect, useState } from "react";
+import "./App.css";
+import HabitSelector from "./components/HabitSelector";
+import { addHabit, hydrateHabits, serializeHabits } from "./services/habitService";
 
 function App() {
   const [habits, setHabits] = useState([]);
   const [newHabitName, setNewHabitName] = useState("");
   const [showContextClues, setShowContextClues] = useState(false);
   const [contextClueInputs, setContextClueInputs] = useState(["", "", ""]);
-  const [successPops, setSuccessPops] = useState({});
-  const [showCelebration, setShowCelebration] = useState("");
-  const [blockShake, setBlockShake] = useState({});
-  const [blockFade, setBlockFade] = useState({});
-  const [towerShake, setTowerShake] = useState({});
+  const [selectedHabitId, setSelectedHabitId] = useState(null);
 
-  const handleAddHabit = (e) => {
+  // Load habits
+  useEffect(() => {
+    try {
+      const stored = localStorage.getItem("habits");
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        setHabits(hydrateHabits(parsed));
+      }
+    } catch (e) {
+      console.error("Failed to load habits", e);
+    }
+  }, []);
+
+  // Save habits
+  useEffect(() => {
+    try {
+      const serialised = serializeHabits(habits);
+      localStorage.setItem("habits", JSON.stringify(serialised));
+    } catch (e) {
+      console.error("Failed to save habits", e);
+    }
+  }, [habits]);
+
+  const handleStartAddHabit = (e) => {
     e.preventDefault();
-    if (newHabitName.trim() === "") return;
+    const trimmed = newHabitName.trim();
+    if (!trimmed) return;
     setShowContextClues(true);
   };
 
   const handleAddContextClues = (e) => {
     e.preventDefault();
+
     const cues = contextClueInputs
-      .map(str => str.trim())
-      .filter(str => str.length > 0)
-      .map(cue => ({ cue, done: false }));
-    setHabits(prev => addHabit(prev, newHabitName.trim(), cues, []));
+      .map((str) => str.trim())
+      .filter((str) => str.length > 0)
+      .map((cue) => ({ cue, done: false }));
+
+    if (cues.length === 0) {
+      alert("Add at least one When/Where context (e.g., “after coffee”).");
+      return;
+    }
+
+    const name = newHabitName.trim();
+    setHabits((prev) => addHabit(prev, name, cues));
+
     setNewHabitName("");
     setShowContextClues(false);
     setContextClueInputs(["", "", ""]);
   };
 
-  const handleToggleClue = (habitId, clueIndex) => {
-    setHabits(prev =>
-      prev.map(habit =>
-        habit.id !== habitId
-          ? habit
-          : {
-              ...habit,
-              contextCues: habit.contextCues.map((clue, idx) =>
-                idx !== clueIndex
-                  ? clue
-                  : { ...clue, done: !clue.done }
-              ),
-            }
-      )
+  const handleCancelContextClues = () => {
+    setShowContextClues(false);
+    setContextClueInputs(["", "", ""]);
+  };
+
+  // When ALL cues for a habit are done (after this click), user earns ONE tower block.
+  const handleToggleContextCue = (habitId, cueIndex) => {
+    setHabits((prev) =>
+      prev.map((habit) => {
+        if (habit.id !== habitId) return habit;
+
+        const prevCues = habit.contextCues || [];
+        if (prevCues.length === 0) {
+          return habit;
+        }
+
+        const prevAllDone = prevCues.every((c) => c.done === true);
+
+        // First, toggle the clicked cue, producing a NEW array
+        const toggledCues = prevCues.map((c, i) =>
+          i === cueIndex ? { ...c, done: !c.done } : { ...c }
+        );
+
+        const nowAllDone = toggledCues.every((c) => c.done === true);
+
+        let blocksEarned = habit.blocksEarned || 0;
+        const maxBlocks = habit.maxBlocks || 12;
+
+        // Default: just use the toggled cues
+        let finalCues = toggledCues;
+
+        // Only award a block when we go from NOT all done -> ALL done
+        if (!prevAllDone && nowAllDone && blocksEarned < maxBlocks) {
+          blocksEarned += 1;
+          // Build a completely fresh array with done reset to false
+          finalCues = toggledCues.map((c) => ({
+            cue: c.cue,
+            done: false
+          }));
+        }
+
+        return {
+          ...habit,
+          contextCues: finalCues,
+          blocksEarned,
+          maxBlocks
+        };
+      })
     );
   };
 
-  const handleSuccessClick = (habit) => {
-    const today = getToday();
-    const blocks = habit.blockStates || [];
-    const hasToday = blocks.some(b => b.date === today);
-    if (hasToday) {
-      setSuccessPops(prev => ({ ...prev, [habit.id]: true }));
-      setTimeout(() => setSuccessPops(prev => ({ ...prev, [habit.id]: false })), 800);
-      return;
-    }
-    setHabits(prev => prev.map(h => h.id !== habit.id ? h : {
-      ...h,
-      blockStates: [
-        ...blocks,
-        { date: today, status: "complete" }
-      ]
-    }));
-    setSuccessPops(prev => ({ ...prev, [habit.id]: true }));
-    const allDone = habit.contextCues.every(cue => cue.done);
-    if (allDone && showCelebration !== habit.name) {
-      setShowCelebration(habit.name);
-      setTimeout(() => setShowCelebration(""), 1800);
-    }
-    setTimeout(() => setSuccessPops(prev => ({ ...prev, [habit.id]: false })), 800);
-  };
-
-  const handleMissedDay = (habit, daysAgo = 0) => {
-    const day = getDaysBack(daysAgo + 1).pop();
-    setHabits(prev => prev.map(h => h.id !== habit.id ? h : {
-      ...h,
-      blockStates: [
-        ...(h.blockStates || []),
-        { date: day, status: "missed" }
-      ]
-    }));
-    // Animation triggers directly from handler—no render cycle mutation!
-    setBlockShake(s => ({ ...s, [habit.id]: true }));
-    setTimeout(() => setBlockShake(s => ({ ...s, [habit.id]: false })), 750);
-
-    // Tower shake logic for collapse condition
-    const blocks = habit.blockStates || [];
-    const augmentedBlocks = [...blocks, { date: day, status: "missed" }];
-    const postLogic = getBlockStatesWithMissedLogic(augmentedBlocks);
-    if (postLogic.filter(b => b.status === "collapse").length > 0) {
-      setTowerShake(s => ({ ...s, [habit.id]: true }));
-      setTimeout(() => setTowerShake(s => ({ ...s, [habit.id]: false })), 750);
-    }
-  };
-
-  const handleSimulateBlocks = (habit, count = 1) => {
-    const today = new Date(getToday());
-    const blocks = [];
-    for (let i = 0; i < count; i++) {
-      const dt = new Date(today);
-      dt.setDate(dt.getDate() - i);
-      const dateString = dt.toISOString().split("T")[0];
-      blocks.push({ date: dateString, status: "complete" });
-    }
-    setHabits(prev => prev.map(h => h.id !== habit.id ? h : {
-      ...h,
-      blockStates: [
-        ...(h.blockStates || []),
-        ...blocks
-      ]
-    }));
-  };
-
-  // Repair button handler
-  const handleRepairTower = (habit) => {
-    setHabits(prev => prev.map(h => h.id !== habit.id ? h : { ...h, blockStates: [] }));
-  };
-
-  const HabitTower = ({ habit }) => {
-    let blocks = getBlockStatesWithMissedLogic(habit.blockStates || []);
-    const collapse = blocks.some(b => b.status === "collapse");
-    return (
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'row',
-          justifyContent: 'center',
-          marginTop: 16,
-          animation: collapse && towerShake[habit.id] ? 'towerShake 0.7s linear' : '',
-        }}>
-        {blocks.map((block, i) => (
-          <div
-            key={block.date + i}
-            className={
-              block.status === "cracked" && blockShake[habit.id] ? "blockShake" :
-              block.status === "destroyed" ? "blockFade" : ""
-            }
-            style={{
-              width: 32,
-              height: 32,
-              margin: 2,
-              borderRadius: 8,
-              background: block.status === "complete" ? "#27ae60" :
-                          block.status === "milestone" ? "gold" :
-                          block.status === "cracked" ? "#FFD700" :
-                          block.status === "destroyed" ? "#d32f2f" :
-                          block.status === "collapse" ? "#bbb" : "#eee",
-              border: block.status === "milestone"
-                ? "3px solid orange"
-                : "2px solid #222",
-              display: "inline-block",
-              boxShadow: block.status === "milestone"
-                ? "0 0 20px 4px gold"
-                : block.status === "complete"
-                  ? "0 2px 14px #baffc9"
-                  : "none",
-              position: "relative",
-              opacity: block.status === "destroyed" ? 0.45 : 1,
-              filter: block.status === "collapse" ? "blur(0.5px)" : "none",
-              transition: "opacity 0.7s"
-            }}
-            title={block.status}
-          >
-            {block.status === "milestone" && (
-              <span style={{
-                color: "orange",
-                fontWeight: 700,
-                fontSize: 22,
-                position: "absolute",
-                left: 7,
-                top: 3,
-              }}>★</span>
-            )}
-            <span style={{
-              color: "#fff",
-              fontWeight: 700,
-              position: "absolute",
-              left: block.status === "milestone" ? 14 : 8,
-              top: 8,
-              fontSize: 13,
-              opacity: 0.8
-            }}>
-              {i+1}
-            </span>
-          </div>
-        ))}
-      </div>
-    );
-  };
+  const selectedHabit =
+    habits.find((h) => h.id === selectedHabitId) || null;
 
   return (
-    <div style={{ maxWidth: 390, margin: '0 auto', padding: 20 }}>
-      <h1>Habit Tracker MVP</h1>
-      {!showContextClues ? (
-        <form onSubmit={handleAddHabit}>
-          <input
-            type="text"
-            value={newHabitName}
-            onChange={e => setNewHabitName(e.target.value)}
-            placeholder="Enter Habit Name"
-            required
-            style={{ width: '100%', marginBottom: 8 }}
-          />
-          <button type="submit" style={{ width: '100%' }}>
-            Add Habit
-          </button>
-        </form>
-      ) : (
-        <form onSubmit={handleAddContextClues} style={{ marginTop: 24 }}>
-          {[0, 1, 2].map(idx => (
-            <input
-              key={idx}
-              type="text"
-              value={contextClueInputs[idx]}
-              onChange={e => {
-                const updated = [...contextClueInputs];
-                updated[idx] = e.target.value;
-                setContextClueInputs(updated);
-              }}
-              placeholder={`Context Clue ${idx + 1}`}
-              style={{ width: '100%', marginBottom: 8 }}
-              required
-            />
-          ))}
-          <button type="submit" style={{ width: '100%' }}>
-            Add Context Clues
-          </button>
-        </form>
-      )}
+    <div className="App">
+      <header className="app-header">
+        <h1>Habit Tower</h1>
+        <p>Stack habits with concrete When/Where cues to lock in your streaks.</p>
+      </header>
 
-      <div style={{ marginTop: 32 }}>
-        {habits.map((habit, i) => (
-          <div key={habit.id} style={{ marginBottom: 80, textAlign: 'center', position: 'relative' }}>
-            <div style={{ fontWeight: 'bold', fontSize: 18, marginBottom: 12 }}>{habit.name}</div>
-            {habit.contextCues.map((context, idx) => (
-              <div key={idx} style={{ position: 'relative', marginBottom: 40 }}>
-                <div
-                  style={{
-                    padding: '14px 0',
-                    background: '#fff',
-                    borderRadius: 8,
-                    boxShadow: '0 1px 4px rgba(0,0,0,0.07)',
-                    width: 160,
-                    margin: '0 auto',
-                    cursor: 'pointer',
-                    border: context.done ? '2px solid #27ae60' : '2px solid #bbb',
-                    transition: 'border 0.2s',
-                  }}
-                  onClick={() => handleToggleClue(habit.id, idx)}
-                  title="Click to mark complete/incomplete"
-                >
-                  <span style={{
-                    fontWeight: 600,
-                    opacity: context.done ? 0.6 : 1,
-                    textDecoration: context.done ? 'line-through' : 'none',
-                    color: context.done ? '#27ae60' : '#111'
-                  }}>
-                    Context Clue {idx + 1}:
-                  </span> {context.cue}
-                </div>
-                {idx < habit.contextCues.length && (
-                  <div style={{
-                    width: 4,
-                    height: 40,
-                    background: '#666',
-                    borderRadius: 2,
-                    position: 'absolute',
-                    left: '50%',
-                    top: '100%',
-                    transform: 'translateX(-50%)',
-                  }}></div>
-                )}
-              </div>
-            ))}
-            <HabitTower habit={habit} />
-            <div style={{ position: 'relative', marginBottom: 0 }}>
-              <div
-                onClick={() => handleSuccessClick(habit)}
-                style={{
-                  background: successPops[habit.id] ? "#27ae60" : "#fff",
-                  color: successPops[habit.id] ? "#fff" : "#222",
-                  border: "2px solid #27ae60",
-                  borderRadius: 16,
-                  fontWeight: 'bold',
-                  fontSize: 16,
-                  width: 210,
-                  margin: "0 auto",
-                  marginTop: -20,
-                  padding: "22px 0",
-                  boxShadow: successPops[habit.id] ? "0 0 16px 6px #baffc9" : "0 1px 6px rgba(0,0,0,0.07)",
-                  cursor: 'pointer',
-                  transition: 'all 0.2s',
-                  transform: successPops[habit.id] ? 'scale(1.06)' : 'scale(1.0)',
-                }}
-                title="Click to mark daily habit completed"
+      <main className="app-main">
+        <section className="habit-list-section">
+          <form onSubmit={handleStartAddHabit} className="add-habit-form">
+            <label htmlFor="habitName">New Habit</label>
+            <input
+              id="habitName"
+              type="text"
+              value={newHabitName}
+              onChange={(e) => setNewHabitName(e.target.value)}
+              placeholder="e.g., Read 1 page"
+            />
+            <button type="submit">Next: When/Where</button>
+          </form>
+
+          <ul className="habit-list">
+            {habits.map((habit) => (
+              <li
+                key={habit.id}
+                className={
+                  habit.id === selectedHabitId
+                    ? "habit-item selected"
+                    : "habit-item"
+                }
+                onClick={() => setSelectedHabitId(habit.id)}
               >
-                Success! Daily Habit Completed
-                {successPops[habit.id] && (
-                  <span style={{ fontWeight: 400, display: 'block', fontSize: 13, marginTop: 7 }}>
-                    Clicked!
-                  </span>
+                <span className="habit-name">{habit.name}</span>
+                {habit.contextCues && habit.contextCues.length > 0 && (
+                  <div className="habit-context-summary">
+                    {habit.contextCues.map((c, i) => (
+                      <span key={i} className={c.done ? "cue done" : "cue"}>
+                        {c.cue}
+                      </span>
+                    ))}
+                  </div>
                 )}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="habit-detail-section">
+          {selectedHabit ? (
+            <>
+              <h2>{selectedHabit.name}</h2>
+
+              <div className="context-cues-panel">
+                <h3>When/Where steps</h3>
+                <p className="microcopy">
+                  Tap each step when it happens.  
+                  Completing all steps once earns you one tower block.
+                </p>
+                {selectedHabit.contextCues.length === 0 && (
+                  <p>No When/Where cues yet.</p>
+                )}
+                <ul className="context-cues-list">
+                  {selectedHabit.contextCues.map((c, i) => (
+                    <li key={i}>
+                      <button
+                        className={
+                          c.done ? "context-cue-btn done" : "context-cue-btn"
+                        }
+                        onClick={() =>
+                          handleToggleContextCue(selectedHabit.id, i)
+                        }
+                      >
+                        {c.done ? "✓ " : ""}
+                        {c.cue}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               </div>
-              <div style={{
-                width: 4,
-                height: 40,
-                background: "#666",
-                borderRadius: 2,
-                position: "absolute",
-                left: "50%",
-                top: "-40px",
-                transform: "translateX(-50%)",
-              }}></div>
-              <div style={{ marginTop: 18, display: 'flex', justifyContent: 'center', gap: 12 }}>
-                <button style={{
-                  border: "1px solid #d32f2f", borderRadius: 7, padding: "5px 11px",
-                  background: "#fff", color: "#d32f2f", fontWeight: 700, cursor: "pointer"
-                }}
-                  onClick={() => handleMissedDay(habit, 0)}
-                  title="Mark today as missed"
-                >Missed Day</button>
-                <button style={{
-                  border: "1px solid #27ae60", borderRadius: 7, padding: "5px 11px",
-                  background: "#fff", color: "#27ae60", fontWeight: 700, cursor: "pointer"
-                }}
-                  onClick={() => handleSimulateBlocks(habit, 1)}
-                  title="Add +1 complete block"
-                >+1 Day</button>
-                <button style={{
-                  border: "1px solid #222", borderRadius: 7, padding: "5px 11px",
-                  background: "#eee", color: "#222", fontWeight: 700, cursor: "pointer"
-                }}
-                  onClick={() => handleRepairTower(habit)}
-                  title="Repair/restart the tower"
-                >Repair Tower</button>
-              </div>
+
+              <HabitSelector habit={selectedHabit} />
+            </>
+          ) : (
+            <div className="empty-state">
+              <p>Select a habit to see its tower and When/Where steps.</p>
             </div>
-            {showCelebration === habit.name && (
-              <div style={{
-                position: "absolute",
-                left: "50%",
-                top: "94%",
-                transform: "translateX(-50%)",
-                background: "#FFD700",
-                color: "#222",
-                padding: "18px 26px",
-                borderRadius: "12px",
-                fontWeight: 700,
-                fontSize: 16,
-                boxShadow: "0 8px 24px rgba(0,0,0,0.19)",
-                animation: "popCelebration 0.7s",
-                zIndex: 10,
-              }}>
-                🎉 All context clues completed first!
+          )}
+        </section>
+      </main>
+
+      {showContextClues && (
+        <div className="overlay-backdrop">
+          <div className="overlay-card">
+            <h2>When/Where will you do “{newHabitName.trim()}”?</h2>
+            <p className="microcopy">
+              Link this habit to 1–3 real moments in your day.  
+              Example: “After my coffee”, “Before I open email”.
+            </p>
+
+            <form onSubmit={handleAddContextClues}>
+              {contextClueInputs.map((val, idx) => (
+                <div key={idx} className="context-input-row">
+                  <label>When/Where {idx + 1}</label>
+                  <input
+                    type="text"
+                    value={val}
+                    onChange={(e) => {
+                      const updated = [...contextClueInputs];
+                      updated[idx] = e.target.value;
+                      setContextClueInputs(updated);
+                    }}
+                    placeholder={
+                      idx === 0
+                        ? "e.g., After my morning coffee"
+                        : idx === 1
+                        ? "e.g., Before I start work"
+                        : "e.g., When I sit on the couch"
+                    }
+                  />
+                </div>
+              ))}
+
+              <div className="overlay-actions">
+                <button type="button" onClick={handleCancelContextClues}>
+                  Cancel
+                </button>
+                <button type="submit">Save Habit with When/Where</button>
               </div>
-            )}
+            </form>
+
+            <div className="overlay-tip">
+              <strong>Why this works:</strong>  
+              Finishing all your When/Where steps turns one tiny run into a visible
+              tower block, giving a clear achievement hit without any reminders.
+            </div>
           </div>
-        ))}
-      </div>
-      <style>{`
-        @keyframes popCelebration {
-          0% { transform: translateX(-50%) scale(0.85); opacity: 0; }
-          70% { transform: translateX(-50%) scale(1.15); opacity: 1; }
-          100% { transform: translateX(-50%) scale(1); opacity: 1; }
-        }
-        @keyframes blockShake {
-          0% { transform: translateX(0); }
-          20% { transform: translateX(-6px); }
-          40% { transform: translateX(6px); }
-          60% { transform: translateX(-6px); }
-          80% { transform: translateX(6px); }
-          100% { transform: translateX(0); }
-        }
-        @keyframes blockFade {
-          0% { opacity: 1; }
-          49% { opacity: 0.45; }
-          100% { opacity: 0.45; }
-        }
-        @keyframes towerShake {
-          0% { transform: translateX(0); }
-          12% { transform: translateX(-9px); }
-          28% { transform: translateX(8px); }
-          44% { transform: translateX(-6px); }
-          60% { transform: translateX(7px); }
-          100% { transform: translateX(0); }
-        }
-        .blockShake {
-          animation: blockShake 0.7s;
-        }
-        .blockFade {
-          animation: blockFade 0.9s;
-        }
-      `}</style>
+        </div>
+      )}
     </div>
   );
 }
